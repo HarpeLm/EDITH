@@ -5,12 +5,19 @@ use std::path::Path;
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub brain: BrainConfig,
+    pub voice: Option<VoiceConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BrainConfig {
     pub ollama_url: String,
     pub model: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VoiceConfig {
+    pub tts_voice: String,
+    pub whisper_model: String,
 }
 
 impl Config {
