@@ -172,6 +172,39 @@ async fn run_osascript(script: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Capture d'écran : niveau 2 (sensible — l'assistant regarde l'écran),
+/// donc toujours soumis à confirmation.
+pub struct TakeScreenshot;
+
+#[async_trait::async_trait]
+impl Tool for TakeScreenshot {
+    fn name(&self) -> &str {
+        "take_screenshot"
+    }
+    fn description(&self) -> &str {
+        "Prend une capture d'écran de l'ordinateur et renvoie le chemin du fichier."
+    }
+    fn level(&self) -> Permission {
+        Permission::Sensitive
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object", "properties": {}})
+    }
+    async fn execute(&self, _args: &Value) -> Result<String> {
+        let path = std::env::temp_dir().join(format!(
+            "edith_screenshot_{}.png",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        ));
+        let status = tokio::process::Command::new("screencapture")
+            .arg("-x")
+            .arg(&path)
+            .status()
+            .await?;
+        anyhow::ensure!(status.success(), "capture d'écran échouée");
+        Ok(format!("Capture enregistrée : {}", path.display()))
+    }
+}
+
 /// Construit le registre du MVP (section 15 du plan).
 pub fn mvp_registry() -> Registry {
     let mut reg = Registry::new();
@@ -179,5 +212,6 @@ pub fn mvp_registry() -> Registry {
     reg.register(Arc::new(OpenApplication));
     reg.register(Arc::new(SetVolume));
     reg.register(Arc::new(PlayMusic));
+    reg.register(Arc::new(TakeScreenshot));
     reg
 }
