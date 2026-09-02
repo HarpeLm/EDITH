@@ -1,0 +1,7 @@
+use_default_settings: true
+server:
+  secret_key: "edith-searxng-local"
+search:
+  formats:
+    - html
+    - json

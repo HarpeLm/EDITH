@@ -10,4 +10,4 @@ wake_word = true
 [tools]
 default_location = "Paris"
 # Instance SearXNG (auto-hébergée de préférence). Vide = search_web désactivé.
-searxng_url = ""
+searxng_url = "http://localhost:8888"
