@@ -6,3 +6,8 @@ model = "qwen3:8b"
 tts_voice = "Amélie"
 whisper_model = "models/ggml-small.bin"
 wake_word = true
+
+[tools]
+default_location = "Paris"
+# Instance SearXNG (auto-hébergée de préférence). Vide = search_web désactivé.
+searxng_url = ""

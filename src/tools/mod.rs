@@ -1,4 +1,5 @@
 pub mod builtin;
+pub mod web;
 
 use crate::brain::ToolDef;
 use crate::security::Permission;

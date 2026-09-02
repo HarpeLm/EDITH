@@ -24,7 +24,9 @@ async fn main() -> Result<()> {
         .context("config.toml introuvable à la racine du projet")?;
 
     let brain = Box::new(Ollama::new(cfg.brain.ollama_url.clone(), cfg.brain.model.clone()));
-    let mut edith = Assistant::new(brain, tools::builtin::mvp_registry());
+    let mut registry = tools::builtin::mvp_registry();
+    tools::web::register_web_tools(&mut registry, &cfg.tools);
+    let mut edith = Assistant::new(brain, registry);
 
     let (say, stt) = match &cfg.voice {
         Some(v) => {
