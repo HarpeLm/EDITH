@@ -1,7 +1,4 @@
-[brain]
-ollama_url = "http://localhost:11434"
-model = "qwen3:8b"
-
 [voice]
 tts_voice = "Amélie"
 whisper_model = "models/ggml-small.bin"
+wake_word = true

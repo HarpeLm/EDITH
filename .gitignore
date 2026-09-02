@@ -2,3 +2,6 @@ target/
 *.db
 .env
 models/
+wakeword/wakeword/.venv
+wakeword/.venv/
+wakeword/vosk-model-small-fr-0.22/

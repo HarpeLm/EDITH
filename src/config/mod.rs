@@ -18,6 +18,9 @@ pub struct BrainConfig {
 pub struct VoiceConfig {
     pub tts_voice: String,
     pub whisper_model: String,
+    /// Écoute continue du wake word « Edith » (nécessite wakeword/.venv).
+    #[serde(default)]
+    pub wake_word: bool,
 }
 
 impl Config {

@@ -8,7 +8,8 @@ mod voice;
 use anyhow::{Context, Result};
 use brain::ollama::Ollama;
 use core::Assistant;
-use voice::{MacSay, WhisperCli};
+use tokio::sync::mpsc;
+use voice::{MacSay, WakeWord, WhisperCli};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,7 +26,6 @@ async fn main() -> Result<()> {
     let brain = Box::new(Ollama::new(cfg.brain.ollama_url.clone(), cfg.brain.model.clone()));
     let mut edith = Assistant::new(brain, tools::builtin::mvp_registry());
 
-    // Voix optionnelle : tout marche aussi sans elle (mode texte).
     let (say, stt) = match &cfg.voice {
         Some(v) => (
             Some(MacSay::new(v.tts_voice.clone())),
@@ -34,38 +34,90 @@ async fn main() -> Result<()> {
         None => (None, None),
     };
 
-    println!("Edith prête. Entrée = parler au micro · ou tape ton message · 'exit' pour quitter");
-    loop {
-        print!("toi > ");
-        use std::io::Write;
-        std::io::stdout().flush()?;
+    // Clavier en tâche de fond : on peut taper même quand le wake word écoute.
+    let (key_tx, mut key_rx) = mpsc::unbounded_channel::<String>();
+    tokio::task::spawn_blocking(move || loop {
         let mut line = String::new();
-        std::io::stdin().read_line(&mut line)?;
-        let typed = line.trim().to_string();
-        match typed.as_str() {
-            "exit" => break,
-            "" => {
-                // Ligne vide = on écoute le micro.
-                let Some(stt) = &stt else { continue };
-                println!("🎙  j'écoute…");
-                let heard = match stt.listen().await {
-                    Ok(t) if !t.is_empty() => t,
-                    Ok(_) => {
-                        println!("(je n'ai rien entendu)");
-                        continue;
+        if std::io::stdin().read_line(&mut line).map(|n| n == 0).unwrap_or(true) {
+            break;
+        }
+        if key_tx.send(line.trim().to_string()).is_err() {
+            break;
+        }
+    });
+
+    let mut wake = match &cfg.voice {
+        Some(v) if v.wake_word => {
+            let root = std::env::current_dir()?;
+            let mut w = WakeWord::spawn(&root)?;
+            w.ready().await?;
+            println!("🔊 Écoute continue activée — dis « Edith » (ou tape ton message, 'exit' pour quitter)");
+            Some(w)
+        }
+        _ => {
+            println!("Edith prête. Entrée = parler au micro · ou tape ton message · 'exit' pour quitter");
+            None
+        }
+    };
+
+    loop {
+        tokio::select! {
+            // Mot d'activation entendu par le processus Vosk.
+            heard = async {
+                match wake.as_mut() {
+                    Some(w) => w.wait().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match heard {
+                    Ok(maybe_cmd) => {
+                        say_oui(&say).await;
+                        let cmd = match maybe_cmd {
+                            Some(c) => c,
+                            None => {
+                                // Rien dit après « Edith » : on écoute activement au micro.
+                                let Some(stt) = &stt else { continue };
+                                println!("🎙  j'écoute…");
+                                match stt.listen().await {
+                                    Ok(t) if !t.is_empty() => t,
+                                    _ => { println!("(je n'ai rien entendu)"); continue; }
+                                }
+                            }
+                        };
+                        println!("toi (voix) > {cmd}");
+                        reply(&mut edith, &say, &cmd).await;
                     }
                     Err(e) => {
-                        tracing::error!("écoute impossible : {e:#}");
-                        continue;
+                        tracing::error!("wake word : {e:#}");
+                        wake = None; // on continue en mode clavier/micro manuel
                     }
-                };
-                println!("toi (voix) > {heard}");
-                reply(&mut edith, &say, &heard).await;
+                }
             }
-            _ => reply(&mut edith, &say, &typed).await,
+            // Saisie clavier.
+            Some(typed) = key_rx.recv() => match typed.as_str() {
+                "" => {
+                    let Some(stt) = &stt else { continue };
+                    println!("🎙  j'écoute…");
+                    match stt.listen().await {
+                        Ok(t) if !t.is_empty() => {
+                            println!("toi (voix) > {t}");
+                            reply(&mut edith, &say, &t).await;
+                        }
+                        _ => println!("(je n'ai rien entendu)"),
+                    }
+                }
+                "exit" => break,
+                _ => reply(&mut edith, &say, &typed).await,
+            },
         }
     }
     Ok(())
+}
+
+async fn say_oui(say: &Option<MacSay>) {
+    if let Some(say) = say {
+        let _ = say.speak("Oui ?").await;
+    }
 }
 
 async fn reply(edith: &mut Assistant, say: &Option<MacSay>, input: &str) {
