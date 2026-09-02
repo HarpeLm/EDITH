@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use brain::ollama::Ollama;
 use core::Assistant;
 use tokio::sync::mpsc;
-use voice::{MacSay, WakeWord, WhisperCli};
+use voice::{MacSay, WatchedWakeWord, WhisperServer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,10 +27,14 @@ async fn main() -> Result<()> {
     let mut edith = Assistant::new(brain, tools::builtin::mvp_registry());
 
     let (say, stt) = match &cfg.voice {
-        Some(v) => (
-            Some(MacSay::new(v.tts_voice.clone())),
-            Some(WhisperCli::new(v.whisper_model.clone())),
-        ),
+        Some(v) => {
+            let server = WhisperServer::start(&v.whisper_model, 9000)?;
+            server.wait_ready().await?;
+            (
+                Some(MacSay::new(v.tts_voice.clone())),
+                Some(server),
+            )
+        }
         None => (None, None),
     };
 
@@ -49,8 +53,7 @@ async fn main() -> Result<()> {
     let mut wake = match &cfg.voice {
         Some(v) if v.wake_word => {
             let root = std::env::current_dir()?;
-            let mut w = WakeWord::spawn(&root)?;
-            w.ready().await?;
+            let w = WatchedWakeWord::start(&root).await?;
             println!("🔊 Écoute continue activée — dis « Edith » (ou tape ton message, 'exit' pour quitter)");
             Some(w)
         }

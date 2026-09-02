@@ -2,6 +2,6 @@ pub mod stt;
 pub mod tts;
 pub mod wakeword;
 
-pub use stt::WhisperCli;
+pub use stt::WhisperServer;
 pub use tts::MacSay;
-pub use wakeword::WakeWord;
+pub use wakeword::WatchedWakeWord;

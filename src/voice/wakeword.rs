@@ -19,7 +19,9 @@ impl WakeWord {
             .arg(script)
             .current_dir(project_root)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            // Les erreurs Python (traceback, micro indisponible…) restent
+            // visibles dans le terminal au lieu d'être avalées.
+            .stderr(std::process::Stdio::inherit())
             .spawn()
             .context("impossible de lancer l'écoute du wake word (venv wakeword/.venv ?)")?;
         let stdout = child.stdout.take().context("stdout du wake word indisponible")?;
@@ -60,5 +62,50 @@ impl WakeWord {
 impl Drop for WakeWord {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+    }
+}
+
+/// Écouteur auto-réparant : si le processus Python meurt (bug, micro coupé),
+/// on le relance au lieu de perdre l'écoute continue pour de bon.
+pub struct WatchedWakeWord {
+    root: std::path::PathBuf,
+    inner: Option<WakeWord>,
+}
+
+impl WatchedWakeWord {
+    pub async fn start(root: &Path) -> Result<Self> {
+        let mut w = WakeWord::spawn(root)?;
+        w.ready().await?;
+        Ok(Self { root: root.to_path_buf(), inner: Some(w) })
+    }
+
+    /// Comme `WakeWord::wait`, mais relance le processus en cas de crash.
+    pub async fn wait(&mut self) -> Result<Option<String>> {
+        loop {
+            let Some(w) = self.inner.as_mut() else { break };
+            match w.wait().await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    tracing::warn!("écoute interrompue ({e:#}), relance…");
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    match WakeWord::spawn(&self.root) {
+                        Ok(mut w) => {
+                            if w.ready().await.is_ok() {
+                                tracing::info!("écoute relancée");
+                                self.inner = Some(w);
+                            } else {
+                                self.inner = None;
+                                anyhow::bail!("impossible de relancer l'écoute");
+                            }
+                        }
+                        Err(_) => {
+                            self.inner = None;
+                            anyhow::bail!("impossible de relancer l'écoute");
+                        }
+                    }
+                }
+            }
+        }
+        anyhow::bail!("écoute indisponible")
     }
 }
