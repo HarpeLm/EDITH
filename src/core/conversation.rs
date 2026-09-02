@@ -44,6 +44,7 @@ impl Conversation {
         &self.messages[start..]
     }
 
+    #[allow(dead_code)] // prévu pour la commande "oublier tout" du plan (section 10)
     pub fn reset(&mut self) {
         self.messages.clear();
     }

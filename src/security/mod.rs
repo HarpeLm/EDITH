@@ -3,6 +3,7 @@ use anyhow::{bail, Result};
 /// Niveaux de permission du plan (section 9) :
 /// 0 = lecture, 1 = réversible, 2 = sensible, 3 = critique.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(dead_code)] // niveaux 2 et 3 actifs dès le mécanisme de confirmation
 pub enum Permission {
     Read,
     Reversible,

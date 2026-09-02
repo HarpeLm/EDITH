@@ -52,7 +52,10 @@ impl WhisperCli {
             .await
             .context("whisper-cli indisponible")?;
         anyhow::ensure!(out.status.success(), "whisper-cli a échoué: {}", String::from_utf8_lossy(&out.stderr));
-        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let text = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .trim_start_matches(['-', '\u{2013}', '\u{2014}', ' '])
+            .to_string();
         Ok(text)
     }
 
