@@ -5,6 +5,9 @@ Protocole (une ligne par événement, flush immédiat) :
   WAKE               — le mot d'activation a été entendu
   TRANSCRIPT <texte> — ce qui a été dit après le wake word (peut être vide)
 puis le script reprend l'écoute. Traitement 100 % local (Vosk, fr small).
+
+Le wake word est détecté dès les résultats partiels (réactivité), et les
+variantes phonétiques couvrent les fautes d'orthographe du modèle Vosk.
 """
 import json
 import queue
@@ -15,7 +18,11 @@ from vosk import Model, KaldiRecognizer
 
 MODEL_PATH = "wakeword/vosk-model-small-fr-0.22"
 SAMPLE_RATE = 16000
-WAKE_WORDS = ("edith", "édith", "é dith", "adith", "édit", "edit")
+# Variantes orthographiques que le modèle français peut produire pour « Edith ».
+WAKE_WORDS = (
+    "edith", "édith", "é dith", "adith", "édith", "aidith", "editt",
+    "édit", "edit", "eydith", "hey dith", "hey edith", "ès dith",
+)
 
 q: queue.Queue[bytes] = queue.Queue()
 
@@ -32,6 +39,7 @@ def contains_wake(text: str) -> bool:
 
 
 def after_wake(text: str) -> str:
+    """Ce qui suit la première occurrence du wake word dans la phrase."""
     t = text.lower()
     for w in WAKE_WORDS:
         i = t.find(w)
@@ -54,28 +62,31 @@ def main() -> None:
     ):
         while True:
             data = q.get()
-            if not rec.AcceptWaveform(data):
-                continue
-            text = json.loads(rec.Result()).get("text", "")
-            if not woke:
-                if contains_wake(text):
-                    emit("WAKE")
-                    woke = True
-                    empty_results = 0
-                    # La commande est parfois dans la même phrase que le wake word.
-                    tail = after_wake(text)
-                    if tail:
-                        emit(f"TRANSCRIPT {tail}")
-                        woke = False
-            else:
-                if text and not contains_wake(text):
-                    emit(f"TRANSCRIPT {text}")
+            if rec.AcceptWaveform(data):
+                text = json.loads(rec.Result()).get("text", "")
+                if not woke:
+                    if contains_wake(text):
+                        emit("WAKE")
+                        woke = True
+                        empty_results = 0
+                        tail = after_wake(text)
+                        if tail:
+                            emit(f"TRANSCRIPT {tail}")
+                            woke = False
+                # woke : l'énoncé en cours contient « Edith » vu en partiel ;
+                # on renvoie ce qui le suit (et rien s'il n'y a rien).
+                elif text:
+                    tail = after_wake(text) if contains_wake(text) else text
+                    emit(f"TRANSCRIPT {tail}")
                     woke = False
-                else:
-                    empty_results += 1
-                    if empty_results >= 3:  # rien dit de recognizable -> on repart
-                        emit("TRANSCRIPT ")
-                        woke = False
+            else:
+                # Détection précoce sur le partiel : « Edith » est repéré
+                # dès qu'il est prononcé, sans attendre la fin de la phrase.
+                if not woke:
+                    partial = json.loads(rec.PartialResult()).get("partial", "")
+                    if contains_wake(partial):
+                        emit("WAKE")
+                        woke = True
 
 
 def emit(line: str) -> None:
